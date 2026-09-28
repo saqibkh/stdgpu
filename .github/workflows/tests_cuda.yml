@@ -1,0 +1,48 @@
+name: Tests CUDA (simulated GPU)
+
+# The CUDA backend's unit tests, run on a simulated NVIDIA T4 (PantheonSim) on
+# a standard runner, which has no GPU. The simulator executes the compiled
+# kernels on the CPU: it checks results, not performance.
+
+on:
+  push:
+    branches:
+      - master
+
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    name: "ubuntu-24.04 / Release / SHARED: ON / CUDA 12.6 (simulated T4)"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up a simulated T4
+        uses: pantheongpu/setup-pantheonsim@v0
+        with:
+          gpu: nvidia/t4
+          cuda-toolkit: "12.6"
+
+      # The simulator stands in for the CUDA runtime, so it is linked
+      # dynamically; compute_75 PTX is what the simulator executes.
+      - name: Configure project
+        shell: bash
+        run: |
+          bash tools/backend/configure_cuda.sh Release -DSTDGPU_BUILD_SHARED_LIBS=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared
+
+      - name: Build project
+        shell: bash
+        run: |
+          bash tools/build.sh Release
+
+      - name: Run tests
+        shell: bash
+        run: |
+          bash tools/run_tests.sh Release
