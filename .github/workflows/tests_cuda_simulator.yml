@@ -1,0 +1,61 @@
+name: Tests CUDA (simulated GPU)
+
+# Optional, non-required check. The hosted runners have no GPU, so the CUDA
+# backend is otherwise never executed in CI. This workflow builds it and runs the
+# test suite on a simulated NVIDIA GPU (https://github.com/pantheongpu/pantheonsim).
+# A simulator cannot reproduce hardware-specific behaviour, so it complements
+# real-GPU testing and does not replace it.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+  pull_request:
+    paths:
+      - "src/stdgpu/cuda/**"
+      - "src/stdgpu/impl/**"
+      - "tests/stdgpu/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - ".github/workflows/tests_cuda_simulator.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cuda-simulator:
+    name: "ubuntu-24.04 / Release / CUDA backend on simulated NVIDIA A100"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the simulated GPU and CUDA toolkit
+        uses: pantheongpu/setup-pantheonsim@06648b8c0cb091584196678593215db2e16bd7eb # v0.1.2
+        with:
+          gpu: nvidia/a100
+          cuda-toolkit: "12.6"
+
+      - name: Configure project
+        shell: bash
+        run: |
+          # Shared libraries are required: they link the shared CUDA runtime, which the simulator provides.
+          # 80-virtual embeds PTX only: the simulator JIT-compiles PTX and does not run SASS.
+          bash tools/backend/configure_cuda.sh Release -DSTDGPU_BUILD_SHARED_LIBS=ON -DCMAKE_CUDA_ARCHITECTURES=80-virtual
+
+      - name: Build project
+        shell: bash
+        run: |
+          bash tools/build.sh Release
+
+      - name: Run tests
+        shell: bash
+        run: |
+          bash tools/run_tests.sh Release
